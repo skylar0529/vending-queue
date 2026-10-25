@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>실시간 자판기 대기 현황 모니터</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #111a14; color: #ffffff; font-family: sans-serif; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 24px; text-align: center; }
+.container { width: 100%; max-width: 540px; background: #1b2820; border: 2px solid #283a2f; border-radius: 32px; padding: 36px 28px; }
+.badge { display: inline-block; color: #4ade80; font-weight: 800; font-size: 14px; margin-bottom: 12px; background: rgba(74, 222, 128, 0.1); padding: 6px 16px; border-radius: 20px; }
+h1 { font-size: 28px; margin-bottom: 28px; color: #e2e8f0; }
+.display-card { background: #233429; border-radius: 24px; padding: 28px 20px; margin-bottom: 20px; }
+.label { font-size: 16px; color: #94a3b8; margin-bottom: 8px; }
+.main-time { font-size: 80px; font-weight: 900; color: #4ade80; }
+.main-time span { font-size: 28px; color: #cbd5e1; }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.sub-card { background: #233429; border-radius: 20px; padding: 20px; }
+.sub-value { font-size: 32px; font-weight: 800; margin-top: 6px; color: #f8fafc; }
+.status-badge { display: inline-block; margin-top: 6px; padding: 6px 16px; border-radius: 12px; font-size: 20px; font-weight: 800; }
+.status-smooth { background: #166534; color: #86efac; }
+.status-normal { background: #854d0e; color: #fef08a; }
+.status-busy { background: #991b1b; color: #fca5a5; }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="badge">LIVE MONITOR</div>
+<h1>자판기 실시간 대기 현황</h1>
+<div class="display-card">
+<div class="label">예상 대기시간</div>
+<div class="main-time"><span id="waitTime">0</span><span>분</span></div>
+</div>
+<div class="info-grid">
+<div class="sub-card">
+<div class="label">현재 대기 인원</div>
+<div class="sub-value"><span id="count">0</span>명</div>
+</div>
+<div class="sub-card">
+<div class="label">혼잡도</div>
+<div id="status" class="status-badge status-smooth">여유</div>
+</div>
+</div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://idcaktkgasgvnsfpnfty.supabase.co";
+const SUPABASE_KEY = "public-anon-key";
+
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let data = { count: 0, averageTime: 45, crowdLimit: 8 };
+
+const waitTime = document.getElementById("waitTime");
+const countElement = document.getElementById("count");
+const statusElement = document.getElementById("status");
+
+function updateScreen() {
+waitTime.textContent = Math.ceil((data.count * data.averageTime) / 60);
+countElement.textContent = data.count;
+
+statusElement.className = "status-badge";
+if (data.count === 0) { statusElement.textContent = "여유"; statusElement.classList.add("status-smooth"); }
+else if (data.count >= data.crowdLimit) { statusElement.textContent = "혼잡"; statusElement.classList.add("status-busy"); }
+else if (data.count >= 4) { statusElement.textContent = "보통"; statusElement.classList.add("status-normal"); }
+else { statusElement.textContent = "대기 있음"; statusElement.classList.add("status-smooth"); }
+}
+
+async function fetchInitialData() {
+let { data: queueData } = await supabaseClient.from('queue_status').select('*').eq('id', 1).single();
+if (queueData) {
+data.count = queueData.count ?? 0;
+data.averageTime = queueData.average_time ?? 45;
+data.crowdLimit = queueData.crowd_limit ?? 8;
+updateScreen();
+}
+}
+
+supabaseClient.channel('public:queue_status_monitor').on('postgres_changes', { event: '*', schema: 'public', table: 'queue_status' }, (payload) => {
+if (payload.new && payload.new.id === 1) {
+data.count = payload.new.count;
+data.averageTime = payload.new.average_time;
+data.crowdLimit = payload.new.crowd_limit;
+updateScreen();
+}
+}).subscribe();
+
+fetchInitialData();
+</script>
+</body>
+</html>

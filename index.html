@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>학교 자판기 대기 현황</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px; background: #f4f7f2; color: #17231b; font-family: Arial, sans-serif; }
+.container { max-width: 600px; margin: 0 auto; }
+h1 { font-size: 30px; line-height: 1.4; }
+.description { color: #68756b; line-height: 1.7; }
+.card { margin-top: 24px; padding: 24px; background: white; border: 1px solid #e1e8df; border-radius: 22px; }
+.label { color: #68756b; font-size: 14px; }
+.wait-time { margin: 16px 0; font-size: 64px; font-weight: bold; color: #176b43; }
+.wait-time span { font-size: 20px; }
+.count { font-size: 18px; margin: 12px 0; }
+.status { display: inline-block; padding: 8px 14px; border-radius: 20px; background: #e5f3e9; color: #176b43; font-weight: bold; }
+button { width: 100%; padding: 17px; margin-top: 12px; border: none; border-radius: 13px; font-size: 16px; font-weight: bold; cursor: pointer; }
+button:active { transform: scale(0.98); }
+.join-button { background: #176b43; color: white; }
+.leave-button { background: #e5f3e9; color: #176b43; }
+.reset-button { background: #eeeeee; color: #333333; }
+.message { min-height: 24px; margin-top: 14px; color: #176b43; font-size: 14px; }
+.settings { margin-top: 28px; padding: 18px; border: 1px solid #dce4da; border-radius: 16px; background: white; }
+.settings label { display: block; margin-top: 14px; font-size: 14px; }
+.settings input { width: 100%; padding: 12px; margin-top: 7px; border: 1px solid #ccd6cb; border-radius: 9px; font-size: 16px; background: #f0f4ef; color: #68756b; cursor: not-allowed; }
+.footer { margin-top: 28px; color: #68756b; font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<main class="container">
+<p style="color:#176b43;font-weight:bold;">SCHOOL VENDING QUEUE</p>
+<h1>자판기 대기,<br>지금 얼마나 걸릴까?</h1>
+<p class="description">운영 설정은 잠겨 있으며, 관리자만 변경할 수 있습니다.</p>
+
+<section class="card">
+<p class="label">현재 예상 대기시간</p>
+<div class="wait-time"><span id="waitTime">0</span><span>분</span></div>
+<p class="count">현재 대기 인원: <strong id="count">0</strong>명</p>
+<p>혼잡도: <span class="status" id="status">여유</span></p>
+
+<button class="join-button" id="joinButton">＋ 대기 줄 입장</button>
+<button class="leave-button" id="leaveButton">✓ 이용 완료 (1명 감소)</button>
+<button class="reset-button" id="resetButton">대기 기록 초기화</button>
+<p class="message" id="message">데이터 로딩 중...</p>
+</section>
+
+<section class="settings">
+<h3>운영 설정 (잠김 상태)</h3>
+<label>1명당 평균 이용 시간 (초)</label>
+<input id="averageTime" type="number" value="45" readonly>
+<label>혼잡 기준 인원</label>
+<input id="crowdLimit" type="number" value="8" readonly>
+
+<button class="reset-button" id="unlockButton">🔓 관리자 모드 켜기</button>
+<button class="leave-button" id="applyButton" style="display:none;">설정 적용 및 저장</button>
+</section>
+</main>
+
+<script>
+const SUPABASE_URL = "https://idcaktkgasgvnsfpnfty.supabase.co";
+const SUPABASE_KEY = "public-anon-key"; // public 설정된 버킷 연동용 기본값
+
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const ADMIN_PASSWORD = "1234";
+
+let data = { id: 1, count: 0, averageTime: 45, crowdLimit: 8 };
+
+const waitTime = document.getElementById("waitTime");
+const countElement = document.getElementById("count");
+const statusElement = document.getElementById("status");
+const message = document.getElementById("message");
+const joinButton = document.getElementById("joinButton");
+const leaveButton = document.getElementById("leaveButton");
+const resetButton = document.getElementById("resetButton");
+const unlockButton = document.getElementById("unlockButton");
+const applyButton = document.getElementById("applyButton");
+const averageInput = document.getElementById("averageTime");
+const crowdInput = document.getElementById("crowdLimit");
+
+function updateScreen() {
+const seconds = data.count * data.averageTime;
+waitTime.textContent = Math.ceil(seconds / 60);
+countElement.textContent = data.count;
+
+if (data.count === 0) statusElement.textContent = "여유";
+else if (data.count >= data.crowdLimit) statusElement.textContent = "혼잡";
+else if (data.count >= 4) statusElement.textContent = "보통";
+else statusElement.textContent = "대기 있음";
+
+if (averageInput.readOnly) averageInput.value = data.averageTime;
+if (crowdInput.readOnly) crowdInput.value = data.crowdLimit;
+}
+
+async function updateSupabase() {
+await supabaseClient.from('queue_status').upsert({
+id: 1, count: data.count, average_time: data.averageTime, crowd_limit: data.crowdLimit
+});
+}
+
+async function fetchInitialData() {
+let { data: queueData } = await supabaseClient.from('queue_status').select('*').eq('id', 1).single();
+if (queueData) {
+data.count = queueData.count ?? 0;
+data.averageTime = queueData.average_time ?? 45;
+data.crowdLimit = queueData.crowd_limit ?? 8;
+}
+updateScreen();
+}
+
+supabaseClient.channel('public:queue_status').on('postgres_changes', { event: '*', schema: 'public', table: 'queue_status' }, (payload) => {
+if (payload.new && payload.new.id === 1) {
+data.count = payload.new.count;
+data.averageTime = payload.new.average_time;
+data.crowdLimit = payload.new.crowd_limit;
+updateScreen();
+}
+}).subscribe();
+
+joinButton.addEventListener("click", async () => { data.count++; updateScreen(); await updateSupabase(); });
+leaveButton.addEventListener("click", async () => { if (data.count > 0) data.count--; updateScreen(); await updateSupabase(); });
+resetButton.addEventListener("click", async () => { if (confirm("초기화할까요?")) { data.count = 0; updateScreen(); await updateSupabase(); } });
+
+unlockButton.addEventListener("click", () => {
+if (prompt("관리자 비밀번호:") === ADMIN_PASSWORD) {
+averageInput.removeAttribute("readonly");
+crowdInput.removeAttribute("readonly");
+averageInput.style.background = "white";
+crowdInput.style.background = "white";
+unlockButton.style.display = "none";
+applyButton.style.display = "block";
+}
+});
+
+applyButton.addEventListener("click", async () => {
+data.averageTime = Number(averageInput.value);
+data.crowdLimit = Number(crowdInput.value);
+averageInput.setAttribute("readonly", true);
+crowdInput.setAttribute("readonly", true);
+averageInput.style.background = "#f0f4ef";
+crowdInput.style.background = "#f0f4ef";
+unlockButton.style.display = "block";
+applyButton.style.display = "none";
+updateScreen();
+await updateSupabase();
+});
+
+fetchInitialData();
+</script>
+</body>
+</html>
